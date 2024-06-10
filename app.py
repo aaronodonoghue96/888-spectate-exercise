@@ -1,16 +1,27 @@
-from flask import Flask, request, jsonify
+"""
+A CRUD REST API for viewing, creating, deleting, and updating sports,
+events for each sport, and selections for each event
+"""
+
 import sqlite3
+from datetime import datetime, timezone
+from flask import Flask, request, jsonify
 from dateutil.parser import parse
 from dateutil.tz import UTC
-from datetime import datetime, timezone
 from slugify import slugify
 
 app = Flask(__name__)
 
-database = "app.db"
+DATABASE = "app.db"
 
 def init_db():
-    conn = sqlite3.connect(database)
+
+    """
+    Initializes the database with the correct tables for sports,
+    events and selections
+    """
+
+    conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
 
     cursor.execute("""CREATE TABLE IF NOT EXISTS sports (
@@ -47,16 +58,37 @@ def init_db():
     conn.close()
 
 def get_db_connection():
-    conn = sqlite3.connect(database)
+
+    """
+    Get the database connection for persisting new records, updating,
+    retrieving, or deleting existing records
+    """
+
+    conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     return conn
 
 @app.route("/", methods=['GET'])
 def hello():
-    return jsonify['message': 'Welcome to the API! To search for sports, events or selections, add "sports", "events" or "selections" to the URL'], 200
+
+    """
+    Welcomes the user to the API, giving instructions on how to access records
+    from any of the three tables
+    """
+
+    return """Welcome to the API! To search for sports, events or selections,
+            add "sports", "events" or "selections" to the URL"""
 
 @app.route("/sports", methods=['POST'])
 def create_sport():
+
+    """
+    Create a new sport with a given name, and optionally a slug and active 
+    status. If a slug is not provided, slugify will generate one from the
+    name. If an active status is not provided, False will be assumed by
+    default, as the sport is new, and thus has no ongoing events
+    """
+
     try:
         name = request.args.get('name')
         slug = request.args.get('slug') or slugify(name)
@@ -64,10 +96,10 @@ def create_sport():
 
         if not name:
             return jsonify({'error': "Name of sport is required"}), 400
-        
+
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("""INSERT INTO sports (name, slug, active) 
+        cur.execute("""INSERT INTO sports (name, slug, active)
                         VALUES (?, ?, ?)""", (
             name,
             slug,
@@ -76,9 +108,8 @@ def create_sport():
         conn.commit()
         conn.close()
         return jsonify({'message': 'sport created'}), 201
-    except Exception as e:
-        print(e)
-        return jsonify({'message': 'error creating sport'}), 500
+    except sqlite3.Error as e:
+        return jsonify({'message': f'error creating sport: {e}'}), 500
 
 @app.route("/sports", methods=['GET'])
 def search_sports():
@@ -119,10 +150,10 @@ def search_sports():
         print(query, params)
         breakpoint()
         cur.execute(query, params)
-        
+
     else:
         cur.execute(query)
-        
+
     sports = cur.fetchall()
     conn.close()
     return jsonify([dict(row) for row in sports]), 200
@@ -133,10 +164,10 @@ def update_sport(name):
 
     if len(data) == 0:
         return jsonify({'message': 'No data provided to update'}), 400
-    
+
     conn = get_db_connection()
     cur = conn.cursor()
-    
+
     update_fields = []
     update_params = []
 
@@ -176,11 +207,13 @@ def create_event():
         actual_start = "NULL"
 
         if not all([name, event_type, sport, scheduled_start]):
-            return jsonify({'error': "Name, type, sport and scheduled start of event are all required"}), 400
-        
+            create_event_message = """Name, type, sport and scheduled start
+                                    of event are all required"""
+            return jsonify({'error': create_event_message}), 400
+
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("""INSERT INTO events 
+        cur.execute("""INSERT INTO events
                         (name, slug, active, type, sport, status, 
                         scheduled_start, actual_start)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", (
@@ -196,9 +229,8 @@ def create_event():
         conn.commit()
         conn.close()
         return jsonify({'message': 'event created'}), 201
-    except Exception as e:
-        print(e)
-        return jsonify({'message': 'error creating event'}), 500
+    except sqlite3.Error as e:
+        return jsonify({'message': f'error creating event: {e}'}), 500
 
 @app.route("/events", methods=['GET'])
 def search_events():
@@ -217,16 +249,16 @@ def search_events():
             # subquery to handle more complex query of getting events
             # with a certain minimum number of active selections
             if arg == "minSelections":
-                query += """name IN (SELECT event FROM selections 
+                query += """name IN (SELECT event FROM selections
                             GROUP BY selection
                             HAVING SUM(active) >= ?) AND """
                 params.append(data[arg])
             elif arg == "timeframe":
                 param = parse(data[arg])
                 param_utc = param.astimezone(UTC)
-                query += """scheduled_start BETWEEN DATETIME('now') 
+                query += """scheduled_start BETWEEN DATETIME('now')
                             AND DATETIME(?) AND """
-                params.append(param)
+                params.append(param_utc)
             elif arg.startswith("name-"):   
                 param = data[arg]
                 if arg == "name-start":
@@ -244,15 +276,18 @@ def search_events():
         query = query[:-4]        
         print(query, params)
         cur.execute(query, params)
-        
+
     else:
         cur.execute(query)
-        
+
     events = cur.fetchall()
     conn.close()
     if "scheduled_start" in data:
-        a = data["scheduled_start"]
-        pass # convert time to timezone specified in request before displaying
+        sched_start = data["scheduled_start"]
+        offset = sched_start[-5:]
+        for row in events:
+            row["scheduled_start"] = row["scheduled_start"].astimezone(offset)
+        # convert time to timezone specified in request before displaying
     return jsonify([dict(row) for row in events]), 200
 
 @app.route("/events/<string:name>", methods=['PUT'])
@@ -261,10 +296,10 @@ def update_event(name):
 
     if len(data) == 0:
         return jsonify({'message': 'No data provided to update'}), 400
-    
+
     conn = get_db_connection()
     cur = conn.cursor()
-    
+
     update_fields = []
     update_params = []
 
@@ -275,24 +310,24 @@ def update_event(name):
 
     query = f"UPDATE events SET {', '.join(update_fields)} WHERE name = ?"
     cur.execute(query, update_params)
-    
+
     active = data['active']
     status = data['status']
-    
-    # if the status is started, 
+
+    # if the status is started,
     # the actual start should be set to the current time
     if status == "started":
-        cur.execute("UPDATE events SET actual_start = ? WHERE name = ?", 
+        cur.execute("UPDATE events SET actual_start = ? WHERE name = ?",
                     (datetime.now(timezone.utc), name))
     elif status in ["ended", "cancelled"]:
-        cur.execute("UPDATE events SET active = 0 WHERE name = ?", (name,))      
-    # for any update that deactivates an event, 
+        cur.execute("UPDATE events SET active = 0 WHERE name = ?", (name,))
+    # for any update that deactivates an event,
     # check if it was the last one for its sport
     if active == "false" or status in ["ended", "cancelled"]:
-        cur.execute("""UPDATE sports SET active = 0 WHERE name IN 
+        cur.execute("""UPDATE sports SET active = 0 WHERE name IN
                     (SELECT sport FROM events GROUP BY sport 
                     HAVING SUM(active) = 0)""")
-        
+
     conn.commit()
     conn.close()
     return jsonify({'message': 'Updated successfully'})
@@ -320,10 +355,10 @@ def create_selection():
             return jsonify({'error': "Name, event and price of selection are required"}), 400
 
         print(request.args)
-        
+
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("""INSERT INTO selections 
+        cur.execute("""INSERT INTO selections
                     (name, event, price, active, outcome)
                     VALUES (?, ?, ?, ?, ?)""", (
             name,
@@ -335,9 +370,8 @@ def create_selection():
         conn.commit()
         conn.close()
         return jsonify({'message': 'selection created'}), 201
-    except Exception as e:
-        print(e)
-        return jsonify({'message': 'error creating selection'}), 500
+    except sqlite3.Error as e:
+        return jsonify({'message': f'error creating selection: {e}'}), 500
 
 @app.route("/selections", methods=['GET'])
 def search_selections():
@@ -351,13 +385,13 @@ def search_selections():
     params = []
 
     if len(data) != 0:
-        query.append(f" WHERE ")
+        query += " WHERE "
         for arg in data:
             if arg == "min_price":
-                query.append(f"price >= ? AND")
+                query += "price >= ? AND"
                 params.append(data[arg])
             elif arg == "max_price":
-                query.append(f"price <= ? AND")
+                query += "price <= ? AND"
                 params.append(data[arg])
             elif arg.startswith("name-"):
                 param = data[arg]
@@ -370,16 +404,16 @@ def search_selections():
                 query += f"{arg} LIKE ? AND "
                 params.append(param)
             else:
-                query.append(f"{arg} = ? AND ")
+                query += f"{arg} = ? AND "
                 params.append(data[arg])
         query = query[:-4]
         #params = " AND ".join([arg + " = " + data[arg] for arg in data])
         print(query, params)
         cur.execute(query, params)
-        
+
     else:
         cur.execute(query)
-        
+
     sports = cur.fetchall()
     conn.close()
     return jsonify([dict(row) for row in sports]), 200
@@ -390,39 +424,39 @@ def update_selection(name):
 
     if len(data == 0):
         return jsonify({'message': 'No data provided to update'}), 400
-    
+
     conn = get_db_connection()
     cur = conn.cursor()
-    
+
     update_fields = []
     update_params = []
 
     for arg in data:
         update_fields.append(f"{arg} = ?")
         update_params.append(data[arg])
-    
+
     update_params.append(name)
 
     query = f"UPDATE selections SET {', '.join(update_fields)} WHERE name = ?"
     cur.execute(query, update_params)
-    
+
     outcome = data['outcome']
     active = data['active']
-    
-    # if the outcome is not unsettled, it is either a win, loss or void, 
+
+    # if the outcome is not unsettled, it is either a win, loss or void,
     # all of which mean the selection is inactive
     if outcome != "unsettled":
         cur.execute("UPDATE selections SET active = 0 WHERE name = ?", (name,))
-    
-    # if selection is set to inactive, and it was the last selection 
+
+    # if selection is set to inactive, and it was the last selection
     # for its event, set the event to inactive
     if active == "false" or outcome != "unsettled":
-        cur.execute("""UPDATE events SET active = 0 WHERE name IN 
+        cur.execute("""UPDATE events SET active = 0 WHERE name IN
                     (SELECT event FROM selections GROUP BY event 
                     HAVING SUM(active) = 0)""")
         # if the event was the last event for its sport,
         # the sport should also be inactive
-        cur.execute("""UPDATE sports SET active = 0 WHERE name IN 
+        cur.execute("""UPDATE sports SET active = 0 WHERE name IN
                     (SELECT sport FROM events GROUP BY sport 
                     HAVING SUM(active) = 0)""")
     conn.commit()
