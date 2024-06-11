@@ -327,6 +327,11 @@ def search_events():
                 query += f"{arg} LIKE ? AND "
                 params.append(param)
             else:
+                # replace hyphen with underscore for scheduled-start and
+                # actual-start, to ensure they are correct in the query,
+                # matching the fields in the database
+                if "-" in arg:
+                    arg.replace("-", "_")
                 query += f"{arg} = ? AND "
                 params.append(data[arg])
         query = query[:-4]
@@ -342,7 +347,7 @@ def search_events():
         sched_start = data["scheduled_start"]
         if sched_start:
             parse(sched_start)
-        if sched_start.endswith("Z"):
+        if sched_start.endswith("Z"): # Z means Zulu Time, i.e. UTC
             offset = UTC
         else:
             offset = sched_start[19:].strip() # first 18 will be date and time

@@ -24,7 +24,7 @@ dateutil (for timezone conversions)
 * All times are stored in the database as UTC to ensure consistency.
 * When the user requests events that will happen in a certain timeframe, the results they will see on-screen will be displayed in their timezone to ensure convenience for users. This can be done only for events, and using the "timeframe" parameter
 * All SQL queries were made using raw SQL, no ORMs were used in the making of this API, as per the requirements.
-* Cascading updates and deletes are NOT allowed, to ensure no user can accidentally change or remove large numbers of records with as little as one wrong request or parameter. Users cannot update the name of any event or sport because of this, as they are used as foreign keys in the selections and events tables respectively.
+* Cascading updates and deletes are NOT allowed, to ensure no user can accidentally change or remove large numbers of records with as little as one wrong request or parameter. Users cannot update the name of any event or sport when there are selections/events referencing it because of this, as they are used as foreign keys in the selections and events tables respectively.
 * Searching using "name" will only find records that match the exact string entered in the query. To allow for partial matching, the parameters "name-start", "name-end" and "name-contains" are available for sports, events and selections, to find records whose name starts with, ends with, or contains the given string respectively.
 * Updating the status of an event or selection will check to see if there are any active events/selections remaining for the sport/event in question, and if there are none, it will update the sport/event to inactive, as per the requirements.
 * Users can also search for sports/events with a number of active events/selections above a specified value respectively, using the min-events (for sports) and min-selections (for events) parameters.
@@ -39,13 +39,29 @@ dateutil (for timezone conversions)
 ## Features
 
 ### Create
+* Users can create a sport, event or selection using a GET request, using "/sports", "/events" or "/selections" followed by the query string with the required parameters 
+  * For sports: name, and optionally slug and active
+  * For events: name, type and sport, and optionally slug and active
+  * For selections: name, event, price, and optionally active
 
 ### Read
+* Users can retrieve information on sports, events or selection using a POST request, using "/sports", "/events" or "/selections" optionally followed by the query string with one or more parameters
+  * With no query string, it will return all sports/events/selections
+  * Parameters for sports are: name, slug, active, min-events, name-start, name-end, name-contains
+  * Parameters for events are: name, type, sport, slug, active, type, status, scheduled-start, actual-start, min-selections, name-start, name-end, name-contains, timeframe
+  * Parameters for selections are: name, event, price, active, outcome, min-price, max-price, name-start, name-end, name-contains
 
 ### Update
+* Users can update one or more values for a sport, event or selection using a PUT request, using "/sports/", "/events/" or "/selections/" followed by the name of the sport/event/selection they want to update, and then the query string with one or more parameters for each area they want to update. 
+  * NOTE: Name cannot be updated on sports or events when there are dependents referencing them in the events and selections tables respectively. Name can be updated for selections because the name there is not linked to any other table, and names for sports or events with no linked records in other tables can be updated.
+  * Parameters for sports are: name, slug, active
+  * Parameters for events are: name, type, sport, slug, active, type, status, scheduled-start, actual-start
+  * Parameters for selections are: name, event, price, active, outcome
+  * As per the Design Decisions section above, updating 'outcome' on a selection to 'Win', 'Lose' or 'Void', or 'status' on an event to 'Ended' or 'Cancelled' can change the active status, updating 'status' on an event to 'Started' will set the actual_start value to the current time, and set the 'type' to Inplay, and updating a selection or event to inactive will check if the event/sport it references has any active selections/sports left, and if not, the event/sport will become inactive too.
 
 ### Delete
-
+* Users can delete a sport, event or selection using a DELETE request, using "/sports/", "/events/" or "/selections/" followed by the name of the sport/event/selection they want to delete. No query string is used here.
+  * NOTE: Only records with no dependents can be deleted, i.e. any selection can be deleted, but sports and events can only be deleted when they have no events/selections referencing them.
 
 ## Testing
 
