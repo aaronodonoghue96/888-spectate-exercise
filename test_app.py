@@ -171,7 +171,36 @@ class TestCases(unittest.TestCase):
         self.assertEqual(len(response.json()), 0)
 
     def test_update_sport_no_params(self):
-        pass
+        url = "http://127.0.0.1:5000/sports/football"
+        response = requests.put(url, timeout=60)
+        self.assertEqual(response.status_code, 400)
+  
+    def test_update_sport_one_param(self):
+        params = {'slug': 'soccer'}
+        url = "http://127.0.0.1:5000/sports/football"
+        for key, value in params.items():
+            url += key + "=" + value + "&"
+        url = url[:-1] # remove final &
+        response = requests.put(url, timeout=60)
+        self.assertEqual(response.status_code, 200)
+
+    def test_update_sport_multiple_params(self):
+        params = {'name': 'Football', 'active': '1'}
+        url = "http://127.0.0.1:5000/sports/football"
+        for key, value in params.items():
+            url += key + "=" + value + "&"
+        url = url[:-1] # remove final &
+        response = requests.put(url, timeout=60)
+        self.assertEqual(response.status_code, 200)
+
+    def test_update_sport_invalid_params(self):
+        params = {'test': 'nonexistent'}
+        url = "http://127.0.0.1:5000/sports/football"
+        for key, value in params.items():
+            url += key + "=" + value + "&"
+        url = url[:-1] # remove final &
+        response = requests.put(url, timeout=60)
+        self.assertEqual(response.status_code, 500)
 
     def test_update_sport_one_param(self):
         pass
@@ -238,7 +267,7 @@ class TestCases(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         
     def test_search_events_one_param(self):
-        params = {"name": "Man U vs Chelsea"}
+        params = {"name": "Man Utd vs Chelsea"}
         url = "http://127.0.0.1:5000/sports?"
         for key, value in params.items():
             url += key + "=" + value + "&"
@@ -247,7 +276,7 @@ class TestCases(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         json_entries = response.json()
         for entry in json_entries:
-            self.assertEqual(entry["name"], "Man U vs Chelsea")
+            self.assertEqual(entry["name"], "Man Utd vs Chelsea")
 
     def test_search_events_name_match(self):
         params = {"name-end": "Chelsea"}
@@ -262,7 +291,7 @@ class TestCases(unittest.TestCase):
             self.assertTrue(entry["name"].endswith("Chelsea"))
 
     def test_search_events_multiple_params(self):
-        params = {"name": "Man U vs Chelsea", "slug": "man-u-vs-chelsea", "status": "Pending"}
+        params = {"name": "Man Utd vs Chelsea", "slug": "man-utd-vs-chelsea", "status": "Pending"}
         url = "http://127.0.0.1:5000/events?"
         for key, value in params.items():
             url += key + "=" + value + "&"
@@ -271,8 +300,8 @@ class TestCases(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         json_entries = response.json()
         for entry in json_entries:
-            self.assertEqual(entry["name"], "Man U vs Chelsea")
-            self.assertEqual(entry["slug"], "man-u-vs-chelsea")
+            self.assertEqual(entry["name"], "Man Utd vs Chelsea")
+            self.assertEqual(entry["slug"], "man-utd-vs-chelsea")
             self.assertEqual(entry["status"], "Pending")
 
     def test_search_events_min_selections(self):
@@ -346,7 +375,7 @@ class TestCases(unittest.TestCase):
             self.assertTrue("Man" in entry["name"])
 
     def test_search_selections_multiple_params(self):
-        params = {"name": "Man U vs Chelsea", "price": "3.00"}
+        params = {"name": "Man Utd vs Chelsea", "price": "3.00"}
         url = "http://127.0.0.1:5000/selections?"
         for key, value in params.items():
             url += key + "=" + value + "&"
@@ -355,7 +384,7 @@ class TestCases(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         json_entries = response.json()
         for entry in json_entries:
-            self.assertEqual(entry["name"], "Man U vs Chelsea")
+            self.assertEqual(entry["name"], "Man Utd vs Chelsea")
             self.assertEqual(entry["price"], "3.00")
 
     def test_search_selections_min_price(self):
@@ -399,31 +428,40 @@ class TestCases(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()), 0)
     
-    def test_update_selection_no_params(self):
-        url = "http://127.0.0.1:5000/events/Man+U+vs+Chelsea"
-        response = requests.post(url, timeout=60)
+    def test_update_event_no_params(self):
+        url = """http://127.0.0.1:5000/events/Man Utd vs Chelsea"""
+        response = requests.put(url, timeout=60)
+        self.assertEqual(response.status_code, 400)
+
+    def test_update_event_one_param(self):
+        params = {'slug': 'manchester-v-chelsea'}
+        url = """http://127.0.0.1:5000/events/Man Utd vs Chelsea?"""
+        for key, value in params.items():
+            url += key + "=" + value + "&"
+        url = url[:-1] # remove final &
+        response = requests.put(url, timeout=60)
+        self.assertEqual(response.status_code, 200)
+
+    def test_update_event_multiple_params(self):
+        params = {'slug': 'utd-v-chelsea', 'active': '1'}
+        url = """http://127.0.0.1:5000/events/Man Utd vs Chelsea?"""
+        for key, value in params.items():
+            url += key + "=" + value + "&"
+        url = url[:-1] # remove final &
+        response = requests.put(url, timeout=60)
+        self.assertEqual(response.status_code, 200)
+
+    def test_update_event_invalid_params(self):
+        params = {'price': 'nonexistent'}
+        url = """http://127.0.0.1:5000/events/Man Utd vs Chelsea?"""
+        for key, value in params.items():
+            url += key + "=" + value + "&"
+        url = url[:-1] # remove final &
+        response = requests.put(url, timeout=60)
         self.assertEqual(response.status_code, 500)
 
-    def test_update_selection_one_param(self):
-        pass
-
-    def test_update_selection_multiple_params(self):
-        pass
-
-    def test_update_selection_invalid_params(self):
-        pass
-    
-    def test_update_set_inactive_cascade(self):
-        pass
-    
-    def test_update_set_status_cascade(self):
-        pass
-
-    def test_update_set_actual_start_and_play_type(self):
-        pass
-
     def test_delete_event_existing(self):
-        url = "http://127.0.0.1:5000/events/Ryder%Cup"
+        url = """http://127.0.0.1:5000/events/Arsenal vs Liverpool"""
         response = requests.delete(url, timeout=60)
         self.assertEqual(response.status_code, 204)
 
@@ -447,7 +485,7 @@ class TestCases(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
 
     def test_create_selection_with_all_params(self):
-        params = {"name": "Chelsea", "event": "Arsenal vs Liverpool", "price":"3.00",
+        params = {"name": "Chelsea", "event": "Man Utd vs Chelsea", "price":"3.00",
                   "active": "1"}
         url = "http://127.0.0.1:5000/selections?"
         for key, value in params.items():
@@ -472,23 +510,35 @@ class TestCases(unittest.TestCase):
 
     def test_update_selection_no_params(self):
         url = "http://127.0.0.1:5000/selections/Chelsea"
-        response = requests.post(url, timeout=60)
-        self.assertEqual(response.status_code, 500)
-
+        response = requests.put(url, timeout=60)
+        self.assertEqual(response.status_code, 400)
+        
     def test_update_selection_one_param(self):
-        pass
+        params = {'price': '3.50'}
+        url = "http://127.0.0.1:5000/selections/Chelsea?"
+        for key, value in params.items():
+            url += key + "=" + value + "&"
+        url = url[:-1] # remove final &
+        response = requests.put(url, timeout=60)
+        self.assertEqual(response.status_code, 200)
 
     def test_update_selection_multiple_params(self):
-        pass
+        params = {'price': '4.50', 'active': '1'}
+        url = "http://127.0.0.1:5000/selections/Chelsea?"
+        for key, value in params.items():
+            url += key + "=" + value + "&"
+        url = url[:-1] # remove final &
+        response = requests.put(url, timeout=60)
+        self.assertEqual(response.status_code, 200)
 
     def test_update_selection_invalid_params(self):
-        pass
-    
-    def test_update_set_inactive_cascade(self):
-        pass
-    
-    def test_update_set_outcome_cascade(self):
-        pass
+        params = {'test': 'nonexistent'}
+        url = "http://127.0.0.1:5000/selections/Chelsea?"
+        for key, value in params.items():
+            url += key + "=" + value + "&"
+        url = url[:-1] # remove final &
+        response = requests.put(url, timeout=60)
+        self.assertEqual(response.status_code, 500)
 
     def test_delete_selection_existing(self):
         url = "http://127.0.0.1:5000/selections/test"
@@ -553,6 +603,18 @@ if __name__ == "__main__":
     tests.test_search_selections_invalid_param()
     tests.test_search_selections_name_match()
     tests.test_search_selections_no_match()
+    tests.test_update_sport_no_params()
+    tests.test_update_sport_one_param()
+    tests.test_update_sport_multiple_params()
+    tests.test_update_sport_invalid_params()
+    tests.test_update_event_no_params()
+    tests.test_update_event_one_param()
+    tests.test_update_event_multiple_params()
+    tests.test_update_event_invalid_params()
+    tests.test_update_selection_no_params()
+    tests.test_update_selection_one_param()
+    tests.test_update_selection_multiple_params()
+    tests.test_update_selection_invalid_params()
     tests.test_delete_sport_existing()
     tests.test_delete_sport_nonexistent()
     tests.test_delete_sport_empty()

@@ -68,12 +68,14 @@ dateutil (for timezone conversions)
 
 ## Testing
 
-Unit testing was performed using the unittest library, and all tests for the CRUD REST API are found in test_app.py. I have also manually tested requests for this assignment using Postman. I have tested a wide range of scenarios, including required inputs, full inputs including optional parameters, empty inputs, invalid parameters, parameters like name matching, min/max price, min events/selections, timezones, and attempting to update/delete an entry with dependents in another table
+Unit testing was performed using the unittest library, and all tests for the CRUD REST API are found in test_app.py. I have also manually tested requests for this assignment using Postman. I have tested a wide range of scenarios, including required inputs, full inputs including optional parameters, empty inputs, invalid parameters, parameters like name matching, min/max price, min events/selections, entering scheduled times in different timezones, and attempting to update/delete an entry with dependents in another table through both unit tests and my own manual testing
 
 Unit tests:
 * Create: all passing
-* Read: all for sports and events passing
-* Update: WIP
+* Read: all passing
+* Update: all passing
 * Delete: all passing
+
+I have also verified via manual testing that the cascade effects (e.g. setting start time when event is updated to Started, setting a sport to inactive when all its events are inactive) work as expected.
 
 I have also performed manual testing for the Find Internal Nodes task to ensure it displays the correct output, including ensuring an empty tree will produce an output of 0, and a tree with just a root will produce an output of 0, ensuring results for worst-case scenarios like a big tree and a straight-line tree (i.e. every node is the child of exactly one other node, forming a straight vertical line) will be calculated correctly

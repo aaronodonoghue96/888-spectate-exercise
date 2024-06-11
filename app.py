@@ -209,13 +209,16 @@ def update_sport(name):
     """
 
     data = request.args
+    
+    if 'active' in data.keys():
+        active = data['active']
 
-    if active.lower() == "false":
-        active = False
-    elif active.lower() == "true":
-        active = True
-    else:
-        return jsonify({'error': "active must be either true or false"}), 400
+        if active.lower() == "false":
+            active = False
+        elif active.lower() == "true":
+            active = True
+        else:
+            return jsonify({'error': "active must be either true or false"}), 400
 
     if len(data) == 0:
         return jsonify({'message': 'No data provided to update'}), 400
@@ -408,9 +411,12 @@ def update_event(name):
             string
     active: updates the active status in the database to the specified value
             in the query string
-    scheduled-start: updates the scheduled start in the database to the specified
-                     value in the query string
-    
+    scheduled-start: updates the scheduled start in the database to the 
+                    specified value in the query string (in UTC)
+    type: updates the type in the database to the specified value in the query
+          string
+    status: updates the status in the database to the specified value in the
+            query string
     
     Name cannot be updated because it is a primary key
     Sport cannot be updated because it is a foreign key referencing the sports table
@@ -419,7 +425,15 @@ def update_event(name):
     data = request.args
 
     if len(data) == 0:
-        return jsonify({'message': 'No data provided to update'}), 400
+        return jsonify({'error': 'No data provided to update'}), 400
+    
+    if 'status' in data.keys() and data['status'].lower() not in \
+        ['pending', 'started', 'ended', 'cancelled']:
+        return jsonify({'error': 'Invalid status'}), 400
+    
+    if 'type' in data.keys() and data['type'].lower() not in \
+        ['preplay', 'inplay']:
+        return jsonify({'error': 'Invalid event type'}), 400
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -441,28 +455,36 @@ def update_event(name):
     query = f"UPDATE events SET {', '.join(update_fields)} WHERE name = ?"
     cur.execute(query, update_params)
 
-    active = data['active']
-    status = data['status']
+    if 'status' in data.keys():
+        status = data['status']
 
-    # if the status is started,
-    # the actual start should be set to the current time,
-    # and the event type should be set to Inplay, as play has begun
-    if status == "started":
-        cur.execute("UPDATE events SET actual_start = ? WHERE name = ?",
-                    (datetime.now(timezone.utc), name))
-        cur.execute("UPDATE events SET type = 'Inplay' WHERE name = ?")
+        # if the status is started,
+        # the actual start should be set to the current time,
+        # and the event type should be set to Inplay, as play has begun
+        if status.lower() == "started":
+            cur.execute("UPDATE events SET actual_start = ? WHERE name = ?",
+                        (datetime.now(timezone.utc), name))
+            cur.execute("UPDATE events SET type = 'Inplay' WHERE name = ?",
+                        (name,))
 
-    # if the status is ended or cancelled,
-    # the event should be inactive, as it is no longer taking place
-    elif status in ["ended", "cancelled"]:
-        cur.execute("UPDATE events SET active = 0 WHERE name = ?", (name,))
+        # if the status is ended or cancelled,
+        # the event should be inactive, as it is no longer taking place
+        elif status.lower() in ["ended", "cancelled"]:
+            cur.execute("UPDATE events SET active = 0 WHERE name = ?", (name,))
+            cur.execute("""UPDATE sports SET active = 0 WHERE name IN
+                        (SELECT sport FROM events GROUP BY sport 
+                        HAVING SUM(active) = 0)""")
 
-    # for any update that deactivates an event,
-    # check if it was the last one for its sport
-    if active == "false" or status in ["ended", "cancelled"]:
-        cur.execute("""UPDATE sports SET active = 0 WHERE name IN
-                    (SELECT sport FROM events GROUP BY sport 
-                    HAVING SUM(active) = 0)""")
+    
+    if 'active' in data.keys():
+        active = data['active']
+        
+        # for any update that deactivates an event,
+        # check if it was the last one for its sport
+        if active.lower() in ["false", "0"]:
+            cur.execute("""UPDATE sports SET active = 0 WHERE name IN
+                        (SELECT sport FROM events GROUP BY sport 
+                        HAVING SUM(active) = 0)""")
 
     conn.commit()
     conn.close()
@@ -477,7 +499,10 @@ def delete_event(name):
 
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("DELETE FROM events WHERE name = ?", (name,))
+    try:
+        cur.execute("DELETE FROM events WHERE name = ?", (name,))
+    except sqlite3.Error as e:
+        return jsonify({'error': f'error deleting event {e}'})
     conn.commit()
     conn.close()
     return jsonify({'message': "event deleted"}), 204
@@ -605,11 +630,11 @@ def update_selection(name):
     database for each specified parameter.
 
     Possible Parameters:
-    Price: updates the price in the database to the specified value in the query
+    price: updates the price in the database to the specified value in the query
            string
-    Active: updates the active status in the database to the specified value
+    active: updates the active status in the database to the specified value
             in the query string
-    Outcome: updates the outcome in the database to the specified value in the
+    outcome: updates the outcome in the database to the specified value in the
              query string
     
     Name cannot be updated because it is a primary key
@@ -620,6 +645,10 @@ def update_selection(name):
 
     if len(data) == 0:
         return jsonify({'message': 'No data provided to update'}), 400
+    
+    if 'outcome' in data.keys() and data['outcome'].lower() not in \
+        ['win', 'lose', 'void', 'unsettled']:
+        return jsonify({'error': 'Invalid outcome'}), 400
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -628,31 +657,46 @@ def update_selection(name):
     update_params = []
 
     for arg in data:
+        if arg == "price":
+            update_params.append("{:.2f}".format(float(data[arg])))
+        else:
+            update_params.append(data[arg])
         update_fields.append(f"{arg} = ?")
-        update_params.append(data[arg])
 
     update_params.append(name)
 
     query = f"UPDATE selections SET {', '.join(update_fields)} WHERE name = ?"
     cur.execute(query, update_params)
 
-    outcome = data['outcome']
-    active = data['active']
-
-    # if the outcome is not unsettled, it is either a win, loss or void,
-    # all of which mean the selection is inactive
-    if outcome != "unsettled":
-        cur.execute("UPDATE selections SET active = 0 WHERE name = ?", (name,))
-
-    # if selection is set to inactive, and it was the last selection
-    # for its event, set the event to inactive
-    if active == "false" or outcome != "unsettled":
-        cur.execute("""UPDATE events SET active = 0 WHERE name IN
-                    (SELECT event FROM selections GROUP BY event 
+    if "outcome" in data.keys():
+        outcome = data['outcome']
+        
+        # if the outcome is not unsettled, it is either a win, loss or void,
+        # all of which mean the selection is inactive
+        if outcome.lower() != "unsettled":
+            cur.execute("UPDATE selections SET active = 0 WHERE name = ?", 
+                        (name,))
+            cur.execute("""UPDATE events SET active = 0 WHERE name IN
+                        (SELECT event FROM selections GROUP BY event 
+                        HAVING SUM(active) = 0)""")
+            # if the event was the last event for its sport,
+            # the sport should also be inactive
+            cur.execute("""UPDATE sports SET active = 0 WHERE name IN
+                    (SELECT sport FROM events GROUP BY sport 
                     HAVING SUM(active) = 0)""")
-        # if the event was the last event for its sport,
-        # the sport should also be inactive
-        cur.execute("""UPDATE sports SET active = 0 WHERE name IN
+    
+    if "active" in data.keys():
+        active = data['active']
+
+        # if selection is set to inactive, and it was the last selection
+        # for its event, set the event to inactive
+        if active.lower() in ["false", "0"]:
+            cur.execute("""UPDATE events SET active = 0 WHERE name IN
+                        (SELECT event FROM selections GROUP BY event 
+                        HAVING SUM(active) = 0)""")
+            # if the event was the last event for its sport,
+            # the sport should also be inactive
+            cur.execute("""UPDATE sports SET active = 0 WHERE name IN
                     (SELECT sport FROM events GROUP BY sport 
                     HAVING SUM(active) = 0)""")
     conn.commit()
@@ -668,7 +712,10 @@ def delete_selection(name):
 
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("DELETE FROM selections WHERE name = ?", (name,))
+    try:
+        cur.execute("DELETE FROM selections WHERE name = ?", (name,))
+    except sqlite3.Error as e:
+        return jsonify({'error': f'error deleting event {e}'})
     conn.commit()
     conn.close()
     return jsonify({'message': "selection deleted"}), 204
