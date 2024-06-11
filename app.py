@@ -4,7 +4,7 @@ events for each sport, and selections for each event
 """
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from flask import Flask, request, jsonify
 from dateutil.parser import parse
 from dateutil.tz import UTC
@@ -22,17 +22,16 @@ def init_db():
     """
 
     conn = sqlite3.connect(DATABASE)
+    conn.execute("PRAGMA foreign_keys = ON") # ensure foreign keys are enabled
     cursor = conn.cursor()
 
     cursor.execute("""CREATE TABLE IF NOT EXISTS sports (
-                        sport_id INTEGER PRIMARY KEY,
-                        name TEXT,
+                        name TEXT PRIMARY KEY,
                         slug TEXT,
                         active BOOLEAN
                     );""")
     cursor.execute("""CREATE TABLE IF NOT EXISTS events (
-                        event_id INTEGER PRIMARY KEY,
-                        name TEXT,
+                        name TEXT PRIMARY KEY,
                         slug TEXT,
                         active BOOLEAN,
                         type TEXT,
@@ -42,18 +41,20 @@ def init_db():
                         actual_start TEXT,
                         FOREIGN KEY (sport)
                             REFERENCES sports (name)
+                            ON UPDATE RESTRICT
+                            ON DELETE RESTRICT
                     );""")
     cursor.execute("""CREATE TABLE IF NOT EXISTS selections (
-                        selection_id INTEGER PRIMARY KEY,
-                        name TEXT,
+                        name TEXT PRIMARY KEY,
                         event TEXT,
                         price REAL,
                         active BOOLEAN,
                         outcome TEXT,
                         FOREIGN KEY (event)
                             REFERENCES events (name)
+                            ON UPDATE RESTRICT
+                            ON DELETE RESTRICT
                     );""")
-
     conn.commit()
     conn.close()
 
@@ -65,6 +66,7 @@ def get_db_connection():
     """
 
     conn = sqlite3.connect(DATABASE)
+    conn.execute("PRAGMA foreign_keys = ON") # ensure foreign keys are enabled
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -93,8 +95,16 @@ def create_sport():
         name = request.args.get('name')
         slug = request.args.get('slug')
         if name and not slug:
-            slugify(name)
+            slug = slugify(name)
         active = request.args.get('active') or False
+
+        if type(active) == "str":
+            if active.lower() in ["false", "0"]:
+                active = False
+            elif active.lower() in ["true", "1"]:
+                active = True
+            else:
+                return jsonify({'error': "active must be either true or false"}), 400
 
         if not name:
             return jsonify({'error': "Name of sport is required"}), 400
@@ -147,18 +157,18 @@ def search_sports():
         for arg in data:
             # subquery to handle more complex query of getting sports
             # with a certain minimum number of active events
-            if arg == "minEvents":
+            if arg == "min-events":
                 query += """name IN
                             (SELECT sport FROM events GROUP BY sport 
                             HAVING SUM(active) >= ?) AND """
                 params.append(int(data[arg]))
             elif arg.startswith("name-"):
-                query += f"{arg} LIKE ? AND "
+                query += "name LIKE ? AND "
                 param = data[arg]
                 if arg == "name-start":
-                    param = "%" + data[arg]
-                elif arg == "name-end":
                     param = data[arg] + "%"
+                elif arg == "name-end":
+                    param = "%" + data[arg]
                 elif arg == "name-contains":
                     param = "%" + data[arg] + "%"
                 params.append(param)
@@ -169,6 +179,7 @@ def search_sports():
             # columns in the sports table. Invalid parameters will result
             # in an error message
             else:
+                arg = arg.replace("-", "_")
                 query += f"{arg} = ? AND "
                 params.append(data[arg])
         query = query[:-4] # remove the last "AND" from the query
@@ -194,13 +205,17 @@ def update_sport(name):
     Active: updates the active status in the database to the specified value
             in the query string
     
-    Name cannot be updated because the foreign key reference to the events
-    table linking sports to events depends on it. The option for cascading
-    updates was not used to prevent users making an update that could
-    potentially affect hundreds of records across tables
+    Name cannot be updated because it is a primary key
     """
 
     data = request.args
+
+    if active.lower() == "false":
+        active = False
+    elif active.lower() == "true":
+        active = True
+    else:
+        return jsonify({'error': "active must be either true or false"}), 400
 
     if len(data) == 0:
         return jsonify({'message': 'No data provided to update'}), 400
@@ -231,19 +246,40 @@ def delete_sport(name):
 
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("DELETE FROM sports WHERE name = ?", (name,))
+    try:
+        cur.execute("DELETE FROM sports WHERE name = ?", (name,))
+    except sqlite3.Error as e:
+        return jsonify({'error': f"error deleting sport: {e}"}, 500)
     conn.commit()
     conn.close()
     return jsonify({'message': "sport deleted"}), 204
 
 @app.route("/events", methods=['POST'])
 def create_event():
+
+    """
+    Create a new event with a given name, sport, scheduled start time, 
+    and optionally a slug and active status. If a slug is not provided, 
+    slugify will generate one from the name. If an active status is not 
+    provided, False will be assumed by default, as the event is new, 
+    and thus has no active selections
+    """
+
     try:
         name = request.args.get('name')
         slug = request.args.get('slug')
         if name and not slug:
-            slugify(name)
+            slug = slugify(name)
         active = request.args.get('active') or False
+        
+        if type(active) == "str":
+            if active.lower() in ["false", "0"]:
+                active = False
+            elif active.lower() in ["true", "1"]:
+                active = True
+            else:
+                return jsonify({'error': "active must be either true or false"}), 400
+            
         # the event has not taken place yet, play has not started, so
         # it should be Preplay until it is started.
         # Variable name is event_type to avoid confusion with Python's
@@ -291,6 +327,26 @@ def create_event():
 
 @app.route("/events", methods=['GET'])
 def search_events():
+
+    """
+    Searches the events table for all records, or when query parameters
+    are specified, all records that match those criteria.
+
+    Possible parameters:
+    minSelections: gets all sports with a number of active selections greater
+                   than or equal to the specified amount
+    name-start: gets all sports whose name starts with the given string
+    name-end: gets all sports whose name ends with the given string
+    name-contains: gets all sports whose name contains the given string
+                    anywhere in its name
+    timeframe: gets all events that will occur between now and the specified
+               date and time. May include offset for timezones
+    name: gets all sports whose name exactly matches the given string
+    slug: gets all sports whose slug exactly matches the given slug
+    active: gets all sports whose active status matches the given active
+            status
+    """
+
     data = request.args
 
     conn = get_db_connection()
@@ -307,9 +363,8 @@ def search_events():
             # with a certain minimum number of active selections
             if arg == "min-selections":
                 query += """name IN (SELECT event FROM selections
-                            GROUP BY selection
-                            HAVING SUM(active) >= ?) AND """
-                params.append(data[arg])
+                            GROUP BY event HAVING SUM(active) >= ?) AND"""
+                params.append(int(data[arg]))
             elif arg == "timeframe":
                 param = parse(data[arg])
                 param_utc = param.astimezone(UTC)
@@ -317,21 +372,17 @@ def search_events():
                             AND DATETIME(?) AND """
                 params.append(param_utc)
             elif arg.startswith("name-"):
+                query += "name LIKE ? AND "
                 param = data[arg]
                 if arg == "name-start":
-                    param = "%" + data[arg]
-                elif arg == "name-end":
                     param = data[arg] + "%"
+                elif arg == "name-end":
+                    param = "%" + data[arg]
                 elif arg == "name-contains":
                     param = "%" + data[arg] + "%"
-                query += f"{arg} LIKE ? AND "
                 params.append(param)
             else:
-                # replace hyphen with underscore for scheduled-start and
-                # actual-start, to ensure they are correct in the query,
-                # matching the fields in the database
-                if "-" in arg:
-                    arg.replace("-", "_")
+                arg = arg.replace("-", "_")
                 query += f"{arg} = ? AND "
                 params.append(data[arg])
         query = query[:-4]
@@ -343,22 +394,28 @@ def search_events():
 
     events = cur.fetchall()
     conn.close()
-    if "scheduled_start" in data:
-        sched_start = data["scheduled_start"]
-        if sched_start:
-            parse(sched_start)
-        if sched_start.endswith("Z"): # Z means Zulu Time, i.e. UTC
-            offset = UTC
-        else:
-            offset = sched_start[19:].strip() # first 18 will be date and time
-            # the rest is the offset, and remove any whitespace
-        for row in events:
-            row["scheduled_start"] = row["scheduled_start"].astimezone(offset)
-        # convert time to timezone specified in request before displaying
     return jsonify([dict(row) for row in events]), 200
 
 @app.route("/events/<string:name>", methods=['PUT'])
 def update_event(name):
+
+    """
+    Updates the event with the given name, setting new values in the
+    database for each specified parameter.
+
+    Possible Parameters:
+    slug: updates the slug in the database to the specified value in the query
+            string
+    active: updates the active status in the database to the specified value
+            in the query string
+    scheduled-start: updates the scheduled start in the database to the specified
+                     value in the query string
+    
+    
+    Name cannot be updated because it is a primary key
+    Sport cannot be updated because it is a foreign key referencing the sports table
+    """
+
     data = request.args
 
     if len(data) == 0:
@@ -427,11 +484,28 @@ def delete_event(name):
 
 @app.route("/selections", methods=['POST'])
 def create_selection():
+
+    """
+    Create a new selection with a given name, event, price, 
+    and optionally an active status. If an active status is not 
+    provided, False will be assumed by default, as the selection is new
+    """
+
     try:
         name = request.args.get('name')
         event = request.args.get('event')
-        price = request.args.get('price')
+        # convert price to float with 2 decimal places
+        price = "{:.2f}".format(float(request.args.get('price')))
         active = request.args.get('active') or False
+        
+        if type(active) == "str":
+            if active.lower() in ["false", "0"]:
+                active = False
+            elif active.lower() in ["true", "1"]:
+                active = True
+            else:
+                return jsonify({'error': "active must be either true or false"}), 400
+            
         # outcome will be Unsettled by default, as we don't know the result yet
         outcome = "Unsettled"
 
@@ -459,6 +533,25 @@ def create_selection():
 
 @app.route("/selections", methods=['GET'])
 def search_selections():
+
+    """
+    Searches the selections table for all records, or when query parameters
+    are specified, all records that match those criteria.
+
+    Possible parameters:
+    min-price: gets all selections whose price is the given value or more
+    max-price: gets all selections whose price is the given value or less
+    name-start: gets all selections whose name starts with the given string
+    name-end: gets all selections whose name ends with the given string
+    name-contains: gets all selections whose name contains the given string
+                    anywhere in its name
+    name: gets all selections whose name exactly matches the given string
+    event: gets all selections whose event matches the given string
+    price: gets all selections whose price exactly matches the given value
+    active: gets all selections whose active status matches the given string
+    outcome: gets all selections whose outcome exactly matches the given
+             string
+    """
     data = request.args
 
     conn = get_db_connection()
@@ -471,23 +564,25 @@ def search_selections():
     if len(data) != 0:
         query += " WHERE "
         for arg in data:
-            if arg == "min_price":
+            # prices must always be shown with two decimal places
+            if arg == "min-price":
                 query += "price >= ? AND"
-                params.append(data[arg])
-            elif arg == "max_price":
+                params.append("{:.2f}".format(float(data[arg])))
+            elif arg == "max-price":
                 query += "price <= ? AND"
-                params.append(data[arg])
+                params.append("{:.2f}".format(float(data[arg])))
             elif arg.startswith("name-"):
+                query += "name LIKE ? AND "
                 param = data[arg]
                 if arg == "name-start":
-                    param = "%" + data[arg]
-                elif arg == "name-end":
                     param = data[arg] + "%"
+                elif arg == "name-end":
+                    param = "%" + data[arg]
                 elif arg == "name-contains":
                     param = "%" + data[arg] + "%"
-                query += f"{arg} LIKE ? AND "
                 params.append(param)
             else:
+                arg = arg.replace("-", "_")
                 query += f"{arg} = ? AND "
                 params.append(data[arg])
         query = query[:-4]
@@ -504,9 +599,26 @@ def search_selections():
 
 @app.route("/selections/<string:name>", methods=['PUT'])
 def update_selection(name):
+
+    """
+    Updates the selection with the given name, setting new values in the
+    database for each specified parameter.
+
+    Possible Parameters:
+    Price: updates the price in the database to the specified value in the query
+           string
+    Active: updates the active status in the database to the specified value
+            in the query string
+    Outcome: updates the outcome in the database to the specified value in the
+             query string
+    
+    Name cannot be updated because it is a primary key
+    Event cannot be updated because it is a foreign key referencing the events table
+    """
+
     data = request.args
 
-    if len(data == 0):
+    if len(data) == 0:
         return jsonify({'message': 'No data provided to update'}), 400
 
     conn = get_db_connection()

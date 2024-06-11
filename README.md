@@ -22,9 +22,9 @@ dateutil (for timezone conversions)
 
 ## Design Decisions
 * All times are stored in the database as UTC to ensure consistency.
-* When the user requests events that will happen in a certain timeframe, the results they will see on-screen will be displayed in their timezone to ensure convenience for users. This can be done only for events, and using the "timeframe" parameter
+* When the user requests events that will happen in a certain timeframe, the results they will see on-screen will be displayed in UTC time. This can be done only for events, and using the "timeframe" parameter
 * All SQL queries were made using raw SQL, no ORMs were used in the making of this API, as per the requirements.
-* Cascading updates and deletes are NOT allowed, to ensure no user can accidentally change or remove large numbers of records with as little as one wrong request or parameter. Users cannot update the name of any event or sport when there are selections/events referencing it because of this, as they are used as foreign keys in the selections and events tables respectively.
+* Cascading updates and deletes are NOT allowed, to ensure no user can accidentally change or remove large numbers of records with as little as one wrong request or parameter. Users cannot update the name of any event, sport or selection, as the name is the primary key, nor can they update what sport an event references, nor what event a selection references, as those are foreign keys.
 * Searching using "name" will only find records that match the exact string entered in the query. To allow for partial matching, the parameters "name-start", "name-end" and "name-contains" are available for sports, events and selections, to find records whose name starts with, ends with, or contains the given string respectively.
 * Updating the status of an event or selection will check to see if there are any active events/selections remaining for the sport/event in question, and if there are none, it will update the sport/event to inactive, as per the requirements.
 * Users can also search for sports/events with a number of active events/selections above a specified value respectively, using the min-events (for sports) and min-selections (for events) parameters.
@@ -37,6 +37,9 @@ dateutil (for timezone conversions)
 
 
 ## Features
+
+### Intro
+* If the user does not add anything to the end of the URL, they will be given a message with instructions on how to use the API to access sports, events or selections
 
 ### Create
 * Users can create a sport, event or selection using a GET request, using "/sports", "/events" or "/selections" followed by the query string with the required parameters 
@@ -66,5 +69,11 @@ dateutil (for timezone conversions)
 ## Testing
 
 Unit testing was performed using the unittest library, and all tests for the CRUD REST API are found in test_app.py. I have also manually tested requests for this assignment using Postman. I have tested a wide range of scenarios, including required inputs, full inputs including optional parameters, empty inputs, invalid parameters, parameters like name matching, min/max price, min events/selections, timezones, and attempting to update/delete an entry with dependents in another table
+
+Unit tests:
+* Create: all passing
+* Read: all for sports and events passing
+* Update: WIP
+* Delete: all passing
 
 I have also performed manual testing for the Find Internal Nodes task to ensure it displays the correct output, including ensuring an empty tree will produce an output of 0, and a tree with just a root will produce an output of 0, ensuring results for worst-case scenarios like a big tree and a straight-line tree (i.e. every node is the child of exactly one other node, forming a straight vertical line) will be calculated correctly
