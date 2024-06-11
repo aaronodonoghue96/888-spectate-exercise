@@ -78,4 +78,6 @@ Unit tests:
 
 I have also verified via manual testing that the cascade effects (e.g. setting start time when event is updated to Started, setting a sport to inactive when all its events are inactive) work as expected.
 
+NOTE: app.py must be running for the tests to be performed, as they require making requests to the API
+
 I have also performed manual testing for the Find Internal Nodes task to ensure it displays the correct output, including ensuring an empty tree will produce an output of 0, and a tree with just a root will produce an output of 0, ensuring results for worst-case scenarios like a big tree and a straight-line tree (i.e. every node is the child of exactly one other node, forming a straight vertical line) will be calculated correctly
